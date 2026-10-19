@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CloudVault Test</title>
+</head>
+<body style="font-family:Arial,sans-serif;padding:40px;background:#f1f5f9">
+  <h1>CloudVault Dashboard</h1>
+  <p>Frontend is working correctly.</p>
+  <p id="status">Checking backend...</p>
+  <script>
+    fetch("http://127.0.0.1:8000/health")
+      .then(r => r.json())
+      .then(data => document.getElementById("status").textContent =
+        "Backend connected: " + JSON.stringify(data))
+      .catch(() => document.getElementById("status").textContent =
+        "Backend connection failed. Check the server and CORS settings.");
+  </script>
+</body>
+</html>

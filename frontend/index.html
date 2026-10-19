@@ -1,0 +1,435 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CloudVault | File Storage</title>
+
+  <script>
+    // Redirect to login before showing the dashboard.
+    if (!sessionStorage.getItem("cloudvault_token")) {
+      window.location.replace("login.html");
+    }
+  </script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f7fb;
+      color: #172033;
+    }
+
+    header {
+      background: #172554;
+      color: white;
+      padding: 22px 8%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      margin: 0;
+    }
+
+    header p {
+      margin-bottom: 0;
+      color: #cbd5e1;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    #usernameDisplay {
+      color: #dbeafe;
+      overflow-wrap: anywhere;
+    }
+
+    main {
+      max-width: 950px;
+      margin: 35px auto;
+      padding: 0 20px;
+    }
+
+    .panel {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 22px;
+      box-shadow: 0 3px 12px #0000000a;
+    }
+
+    button {
+      border: 0;
+      border-radius: 7px;
+      padding: 10px 14px;
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+      margin: 4px;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    button.delete {
+      background: #dc2626;
+    }
+
+    button.logout {
+      background: #475569;
+    }
+
+    input[type="file"] {
+      margin: 12px 0;
+      max-width: 100%;
+    }
+
+    #status {
+      margin-top: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .file {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 14px;
+      margin-top: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .file-name {
+      font-weight: bold;
+      overflow-wrap: anywhere;
+    }
+
+    .muted {
+      color: #64748b;
+      font-size: 13px;
+      margin-top: 5px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 600px) {
+      header {
+        padding: 20px;
+      }
+
+      .panel {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div>
+      <h1>☁ CloudVault</h1>
+      <p>Your personal file storage dashboard</p>
+    </div>
+
+    <div class="header-actions">
+      <span id="usernameDisplay">Loading account...</span>
+      <button id="logoutButton" class="logout" type="button">
+        Logout
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>Upload a file</h2>
+
+      <form id="uploadForm">
+        <input type="file" id="fileInput" required>
+        <br>
+        <button type="submit" id="uploadButton">Upload File</button>
+      </form>
+
+      <p id="status" role="status">Ready to upload.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Your stored files</h2>
+      <button id="refreshButton" type="button">Refresh Files</button>
+      <div id="fileList">Loading files...</div>
+    </section>
+  </main>
+
+  <script>
+    const API = "http://127.0.0.1:8000";
+
+    const form = document.getElementById("uploadForm");
+    const input = document.getElementById("fileInput");
+    const status = document.getElementById("status");
+    const list = document.getElementById("fileList");
+    const uploadButton = document.getElementById("uploadButton");
+    const refreshButton = document.getElementById("refreshButton");
+    const logoutButton = document.getElementById("logoutButton");
+    const usernameDisplay = document.getElementById("usernameDisplay");
+
+    const token = sessionStorage.getItem("cloudvault_token");
+
+    // Show the signed-in username.
+    try {
+      const user = JSON.parse(
+        sessionStorage.getItem("cloudvault_user") || "{}"
+      );
+
+      usernameDisplay.textContent = user.username
+        ? "Signed in as " + user.username
+        : "Signed in";
+    } catch {
+      usernameDisplay.textContent = "Signed in";
+    }
+
+    // Attach the JWT token to every protected API request.
+    async function apiFetch(path, options = {}) {
+      const currentToken = sessionStorage.getItem("cloudvault_token");
+
+      if (!currentToken) {
+        logout();
+        throw new Error("Please log in again.");
+      }
+
+      const headers = new Headers(options.headers || {});
+      headers.set("Authorization", `Bearer ${currentToken}`);
+
+      const response = await fetch(`${API}${path}`, {
+        ...options,
+        headers
+      });
+
+      // The token may have expired or been rejected.
+      if (response.status === 401) {
+        logout();
+        throw new Error("Your session expired. Please log in again.");
+      }
+
+      return response;
+    }
+
+    function logout() {
+      sessionStorage.removeItem("cloudvault_token");
+      sessionStorage.removeItem("cloudvault_user");
+      window.location.replace("login.html");
+    }
+
+    logoutButton.addEventListener("click", logout);
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) {
+        return (bytes / 1024).toFixed(1) + " KB";
+      }
+      return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+    }
+
+    async function loadFiles() {
+      list.textContent = "Loading files...";
+      refreshButton.disabled = true;
+
+      try {
+        const response = await apiFetch("/api/files");
+
+        if (!response.ok) {
+          throw new Error("Could not load files.");
+        }
+
+        const data = await response.json();
+        list.replaceChildren();
+
+        if (!Array.isArray(data.files)) {
+          throw new Error("Unexpected file list response from the API.");
+        }
+
+        if (data.files.length === 0) {
+          list.textContent = "No files uploaded yet.";
+          return;
+        }
+
+        data.files.forEach(file => {
+          const card = document.createElement("div");
+          card.className = "file";
+
+          const details = document.createElement("div");
+
+          const name = document.createElement("div");
+          name.className = "file-name";
+          name.textContent = file.filename;
+
+          const meta = document.createElement("div");
+          meta.className = "muted";
+          meta.textContent =
+            `${formatSize(file.size_bytes)} · ID ${file.id}`;
+
+          details.append(name, meta);
+
+          const actions = document.createElement("div");
+          actions.className = "actions";
+
+          const download = document.createElement("button");
+          download.type = "button";
+          download.textContent = "Download";
+          download.addEventListener("click", () => downloadFile(file));
+
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.textContent = "Delete";
+          remove.className = "delete";
+          remove.addEventListener("click", () => deleteFile(file.id));
+
+          actions.append(download, remove);
+          card.append(details, actions);
+          list.append(card);
+        });
+      } catch (error) {
+        if (sessionStorage.getItem("cloudvault_token")) {
+          list.textContent = error.message ||
+            "Unable to connect to CloudVault. Check that the API is running.";
+        }
+      } finally {
+        refreshButton.disabled = false;
+      }
+    }
+
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+
+      const file = input.files[0];
+      if (!file) return;
+
+      if (file.size > 20 * 1024 * 1024) {
+        status.textContent = "The maximum file size is 20 MB.";
+        return;
+      }
+
+      const body = new FormData();
+      body.append("file", file);
+
+      uploadButton.disabled = true;
+      status.textContent = "Uploading...";
+
+      try {
+        const response = await apiFetch("/api/files/upload", {
+          method: "POST",
+          body
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.detail || "Upload failed.");
+        }
+
+        status.textContent =
+          `Uploaded ${result.filename} successfully.` +
+          (result.sha256 ? ` SHA-256: ${result.sha256}` : "");
+
+        form.reset();
+        await loadFiles();
+      } catch (error) {
+        if (sessionStorage.getItem("cloudvault_token")) {
+          status.textContent = error.message || "Upload failed.";
+        }
+      } finally {
+        uploadButton.disabled = false;
+      }
+    });
+
+    async function downloadFile(file) {
+      try {
+        const response = await apiFetch(
+          `/api/files/${file.id}/download`
+        );
+
+        if (!response.ok) {
+          let message = "Download failed.";
+
+          try {
+            const result = await response.json();
+            message = result.detail || message;
+          } catch {}
+
+          throw new Error(message);
+        }
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+
+        link.href = url;
+        link.download = file.filename || `cloudvault-file-${file.id}`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        // Allow the browser to begin the download before releasing the URL.
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        status.textContent = `Downloaded ${file.filename}.`;
+      } catch (error) {
+        if (sessionStorage.getItem("cloudvault_token")) {
+          status.textContent = error.message || "Download failed.";
+        }
+      }
+    }
+
+    async function deleteFile(id) {
+      if (!confirm("Permanently delete this file?")) return;
+
+      try {
+        const response = await apiFetch(`/api/files/${id}`, {
+          method: "DELETE"
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.detail || "Delete failed.");
+        }
+
+        status.textContent = "File deleted successfully.";
+        await loadFiles();
+      } catch (error) {
+        if (sessionStorage.getItem("cloudvault_token")) {
+          status.textContent = error.message || "Delete failed.";
+        }
+      }
+    }
+
+    refreshButton.addEventListener("click", loadFiles);
+
+    // Load only after the token is available.
+    if (token) {
+      loadFiles();
+    }
+  </script>
+</body>
+</html>

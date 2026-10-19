@@ -1,0 +1,175 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CloudVault | Login</title>
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: #101827;
+            color: #f8fafc;
+            font-family: Arial, sans-serif;
+        }
+
+        .card {
+            width: min(90%, 390px);
+            padding: 30px;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            background: #1e293b;
+        }
+
+        h1 { margin-bottom: 8px; }
+        p { color: #cbd5e1; }
+
+        input, button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 14px;
+            border-radius: 8px;
+            font-size: 15px;
+        }
+
+        input {
+            border: 1px solid #475569;
+            background: #0f172a;
+            color: white;
+        }
+
+        button {
+            border: 0;
+            background: #3b82f6;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        #message { overflow-wrap: anywhere; }
+        .switch { color: #93c5fd; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <h1>☁️ CloudVault</h1>
+        <p id="subtitle">Sign in to access your files.</p>
+
+        <form id="authForm">
+            <input id="username" placeholder="Username" required
+                   minlength="3" maxlength="30">
+
+            <input id="email" type="email" placeholder="Email address"
+                   style="display:none">
+
+            <input id="password" type="password" placeholder="Password"
+                   required minlength="8" maxlength="128">
+
+            <button id="submitButton" type="submit">Login</button>
+        </form>
+
+        <p id="message" role="status"></p>
+        <p>
+            <span id="switchText">New to CloudVault?</span>
+            <span class="switch" id="switchMode">Create account</span>
+        </p>
+    </main>
+
+    <script>
+        const API = "http://127.0.0.1:8000";
+
+        const form = document.getElementById("authForm");
+        const username = document.getElementById("username");
+        const email = document.getElementById("email");
+        const password = document.getElementById("password");
+        const message = document.getElementById("message");
+        const submitButton = document.getElementById("submitButton");
+
+        let signupMode = false;
+
+        document.getElementById("switchMode").onclick = () => {
+            signupMode = !signupMode;
+            email.style.display = signupMode ? "block" : "none";
+            email.required = signupMode;
+            username.autocomplete = signupMode ? "username" : "username";
+            password.autocomplete = signupMode
+                ? "new-password" : "current-password";
+
+            submitButton.textContent = signupMode
+                ? "Create Account" : "Login";
+
+            document.getElementById("subtitle").textContent = signupMode
+                ? "Create your personal cloud storage account."
+                : "Sign in to access your files.";
+
+            document.getElementById("switchText").textContent = signupMode
+                ? "Already registered?" : "New to CloudVault?";
+
+            document.getElementById("switchMode").textContent = signupMode
+                ? "Login" : "Create account";
+
+            message.textContent = "";
+        };
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            message.textContent = "Please wait...";
+            submitButton.disabled = true;
+
+            try {
+                const endpoint = signupMode
+                    ? "/api/auth/signup"
+                    : "/api/auth/login";
+
+                const payload = signupMode
+                    ? {
+                        username: username.value.trim(),
+                        email: email.value.trim(),
+                        password: password.value
+                    }
+                    : {
+                        username_or_email: username.value.trim(),
+                        password: password.value
+                    };
+
+                const response = await fetch(API + endpoint, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.detail || "Request failed.");
+                }
+
+                if (signupMode) {
+                    message.textContent =
+                        "Account created! Switch to Login to continue.";
+                    return;
+                }
+
+                // Store the token only for this browser tab's session.
+                sessionStorage.setItem("cloudvault_token",
+                    result.access_token);
+                sessionStorage.setItem("cloudvault_user",
+                    JSON.stringify(result.user));
+
+                window.location.href = "index.html";
+            } catch (error) {
+                message.textContent = error.message ||
+                    "Could not connect to CloudVault.";
+            } finally {
+                submitButton.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
+```
